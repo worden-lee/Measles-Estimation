@@ -45,12 +45,12 @@ w.gamma <- function( tau, theta ) {
 ## i.e. list of times of symptom onset t
 #t <- c( 0, 8, 11, 22, 29, 37 )
 
-## reduced Wallinga-Teunis (p.511 of W and T 2004)
+## Wallinga-Teunis formula (p.511 of W and T 2004, and appendix)
 ## t: list of onset dates, indexed by index "i" of individual cases
 ## v: list of transmission sources, indexed by i; NA if unknown; -1 if primary case
 ## w: density function for serial interval
 ## returns: list of R values indexed by i
-reduced.wallinga.teunis <- function( t, v, w, penalty ) {
+wallinga.teunis <- function( t, v, w, penalty ) {
 	cat( 'here are ROD and epi links\n' )
 	print( t )
 	print( v )
@@ -91,37 +91,12 @@ reduced.wallinga.teunis <- function( t, v, w, penalty ) {
 	Rj
 }
 
-## try the full Wallinga Teunis, with enumeration of all the networks,
-## see how far we can get
-big.wallinga.teunis <- function( t, v, w ) {
-	## there are two formulations, I want to look at both
-
-	## first an integration over all network structures
-	## maybe do it monte carlo
-	tf <- data.frame( t = t ) # df form of onset date sequence
-	tq <- filter( tf, t > 0 ) # the non-primary cases
-	for (i in 1:1000) {
-	    ## consider all possible networks with equal weight
-	    ## a network is: for each case i with unknown source,
-	    ## assign a source j /= i.
-	    ## networks that have likelihood zero might as well
-	    ## be excluded, including any with cycles
-	    ## or with sources whose onset date is later than target's.
-	    ## so, for example, we can sample from networks by
-	    ## choosing each j uniformly from all the earlier cases.
-
-	    ## given a network, 
-	}
-}
-
-#Rj = reduced.wallinga.teunis(t, w.gamma)
-
 ## get the disney epidemic curve
 small.world <- read.csv( 'smallword_deid.csv', row.names=NULL )
 
 ## first run it with no smarts
 ## it overdoes initial R because trying to infect all the primary cases
-Rj <- reduced.wallinga.teunis( small.world$ROD, NA*small.world$ROD, w.gamma, NULL )
+Rj <- wallinga.teunis( small.world$ROD, NA*small.world$ROD, w.gamma, NULL )
 p <- ( ggplot( data.frame( t=small.world$ROD, R=Rj ) )
 	+ geom_point( aes( x=t, y=Rj ) )
 	+ geom_line( aes( x=t, y=Rj ), width=0 )
@@ -133,7 +108,7 @@ print(p)
 dev.off()
 
 ## now with the primary cases left out of infection process
-Rj <- reduced.wallinga.teunis( small.world$ROD, ifelse( small.world$Transmission == 'Disney primary case', -1, NA ), w.gamma, NULL )
+Rj <- wallinga.teunis( small.world$ROD, ifelse( small.world$Transmission == 'Disney primary case', -1, NA ), w.gamma, NULL )
 p <- ( ggplot( data.frame( t=small.world$ROD, R=Rj ) )
 	+ geom_point( aes( x=t, y=Rj ) )
 	+ geom_line( aes( x=t, y=Rj ), width=0 )
@@ -155,10 +130,11 @@ ss <- ( small.world
     ) )
 )
 print( select( ss, IID, ROD, Transmission, EpilinkID, v ) )
-Rj <- reduced.wallinga.teunis( ss$ROD, ss$v, w.gamma, NULL )
-p <- ( ggplot( data.frame( t=ss$ROD, R=Rj ) )
-	+ geom_point( aes( x=t, y=Rj ) )
-	+ geom_line( aes( x=t, y=Rj ), width=0 )
+Rj <- wallinga.teunis( ss$ROD, ss$v, w.gamma, NULL )
+p <- ( ggplot( data.frame( t=ss$ROD, R=Rj ), aes( x=t, y=R ) )
+	+ geom_point()
+	+ geom_line( width=0 )
+	#+ geom_smooth()
 	+ geom_line( aes( x=t ), y=1 )
 	+ labs( x='Day', y='R' )
 )
@@ -171,10 +147,11 @@ penalty <- function(i,j) {
 	ifelse( ss$LHJ[i] == ss$LHJ[j], 1, 0.01 )
 }
 print( select( ss, IID, ROD, Transmission, EpilinkID, v ) )
-Rj <- reduced.wallinga.teunis( ss$ROD, ss$v, w.gamma, penalty )
-p <- ( ggplot( data.frame( t=ss$ROD, R=Rj ) )
-	+ geom_point( aes( x=t, y=Rj ) )
-	+ geom_line( aes( x=t, y=Rj ), width=0 )
+Rj <- wallinga.teunis( ss$ROD, ss$v, w.gamma, penalty )
+p <- ( ggplot( data.frame( t=ss$ROD, R=Rj ), aes( x=t, y=R ) )
+	+ geom_point()
+	+ geom_line( width=0 )
+	#+ geom_smooth()
 	+ geom_line( aes( x=t ), y=1 )
 	+ labs( x='Day', y='R' )
 )
