@@ -32,30 +32,28 @@ w.gamma <- function( tau, theta ) {
 	) )
 }
 
-## Wallinga-Teunis formula (p.511 of W and T 2004, and appendix)
-## t: list of onset dates, indexed by index "i" of individual cases
-## v: list of transmission sources, indexed by i; NA if unknown; -1 if primary case
-## w: density function for serial interval
-## penalty: multiplier for likelihood depending on other details of the two cases
-## returns: list of R values indexed by i
-wallinga.teunis <- function( t, v, w, penalty ) {
-	cat( 'here are ROD and epi links\n' )
-	print( t )
-	print( v )
+## w matrix used in Wallinga-Teunis
+## t: list of onset dates
+## v: list of transmission sources (see below)
+## w: serial interval density function
+## returns: matrix of probability of transmission from j to i for each i,j
+w.matrix <- function( t, v, w, penalty ) {
+	## this is likelihood for infection of i given source j
 
 	if ( is.null( penalty ) ) {
 		penalty <- function(i,j) 1
 	}
 
-	## record all w_ij = w( ti - tj )
-	## this is likelihood for infection of i given source j
 	## if source of i is not unknown, skip
 	wij <- outer( seq_along(t), seq_along(t), FUN=function( i, j ) ifelse( is.na(v[i]), w( t[i] - t[j], c() ) * penalty(i,j), 0 ) )
 	#cat( 'w_ij\n' )
 	#print( wij )
+	wij
+}
 
-	## construct all p_ij = w_ij / sum(k) w_ik
-	## this is relative likelihood for j being source of i
+## p matrix used in Wallinga-Teunis
+## returns: matrix of relative likelihoods of each j as source for i
+p.matrix <- function( t, v, wij ) {
 	## p is 1 where j is known, 0 if i a primary case
 	pij <- outer( seq_along(t), seq_along(t), FUN=function(i,j)
 	    sapply( seq_along(i), FUN=function(k)
@@ -70,13 +68,64 @@ wallinga.teunis <- function( t, v, w, penalty ) {
 	)
 	#cat( 'p_ij\n' )
 	#print( pij )
+	pij
+}
+
+## Wallinga-Teunis formula (p.511 of W and T 2004, and appendix)
+## t: list of onset dates, indexed by index "i" of individual cases
+## v: list of transmission sources, indexed by i; NA if unknown; -1 if primary case
+## w: density function for serial interval
+## penalty: multiplier for likelihood depending on other details of the two cases
+## returns: list of R values indexed by i
+wallinga.teunis <- function( t, v, w, penalty ) {
+	cat( 'here are ROD and epi links\n' )
+	print( t )
+	print( v )
+
+	## record all w_ij = w( ti - tj )
+	wij <- w.matrix( t, v, w, penalty )
+
+	## construct all p_ij = w_ij / sum(k) w_ik
+	## this is relative likelihood for j being source of i
+	pij <- p.matrix( t, v, wij )
 
 	## construct R_j = sum(ti>tj) p_ij
 	## an expected number of cases caused by j
-	Rj = sapply( seq_along(t), FUN=function(j) sum( sapply( seq_along(t), FUN=function(i) pij[i,j] ) ) )
+	Rj <- sapply( seq_along(t), FUN=function(j) sum( sapply( seq_along(t), FUN=function(i) pij[i,j] ) ) )
 	#cat( 'R_j\n' )
 	#print( Rj )
 	Rj
+}
+
+## estimate likely generation membership of cases using W-T-like summation
+estimate.generations <- function( t, v, w, penalty ) {
+	## wij = prob( j -> i )
+	wij <- w.matrix( t, v, w, penalty )
+
+	## pij = L( j -> i | i )
+	pij <- p.matrix( t, v, wij )
+
+	g <- data.frame( i=c(), t=c(), generation=c(), p=c() )
+	## p( i is in generation 0 ) = delta( i an index case )
+	## p_0[i] = delta( v(i), -1 )
+	p.i <- ifelse( !is.na(v) & v == -1, 1, 0 )
+	gen <- 0
+	## p( i is in generation n ) = sum_j( p( j in n ) L( j -> i ) )
+	## p_n[i] = sum_j p_{n-1}[j] pij[i,j]
+	## p_n = pij p_{n-1}
+	while( sum( p.i ) > 0 ) {
+	    g %<>% rbind( data.frame(
+		i = seq_along(t),
+		t = t,
+		generation = gen,
+		p = p.i
+	    ) )
+	    p.i <- sapply( seq_along(t), FUN=function(i) {
+		sum( sapply( seq_along(t), FUN=function(j) pij[i,j]*p.i[j] ) )
+	    } )
+	    gen <- gen + 1
+	}
+	g
 }
 
 avg.by.week <- function( df ) {

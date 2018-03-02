@@ -32,11 +32,16 @@ small.world <- ( small.world
     ## other number = known source
     %>% mutate( v = ifelse(
         Transmission == 'Disney primary case',
-	## TODO: there are 3 more primary cases
         -1,
-        EpilinkID
+	ifelse(
+	    Transmission == 'Unknown' & ROD %in% c(0,4,7),
+	    -1,
+            EpilinkID
+	)
     ) )
 )
+#print( small.world %>% filter( v == -1 ) %>% nrow )
+## 45
 
 ## first run it with no smarts
 ## it overdoes initial R because trying to infect all the primary cases
@@ -82,6 +87,20 @@ p <- ( ggplot( small.world, aes( x=Age, y=R.epi ) )
 	+ scale_y_log10()
 )
 png( 'smallworld-by-age.png' )
+print(p)
+dev.off()
+
+g <- ( small.world
+	%>% { estimate.generations( .$ROD, .$v, w.gamma, NULL ) }
+	%>% group_by( t, generation )
+	%>% summarize( p = sum(p) )
+	%>% ungroup
+	%>% mutate( generation = factor(generation) )
+)
+p <- ( ggplot( g, aes( x=t, y=p ) )
+	+ geom_col( aes( fill=generation ) )
+)
+png( 'smallworld-generations-epi.png' )
 print(p)
 dev.off()
 
