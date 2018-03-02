@@ -23,13 +23,28 @@ theme_set(theme_bw(12)
 ## get the disney epidemic curve
 small.world <- read.csv( 'smallword_deid.csv', row.names=NULL )
 
+small.world <- ( small.world
+    ## sort so that i == ID, so that epi links to ID work
+    %>% arrange( IID )
+    ## add column of known sources for W-T algorithm.
+    ## NA = not known
+    ## -1 = primary case
+    ## other number = known source
+    %>% mutate( v = ifelse(
+        Transmission == 'Disney primary case',
+	## TODO: there are 3 more primary cases
+        -1,
+        EpilinkID
+    ) )
+)
+
 ## first run it with no smarts
 ## it overdoes initial R because trying to infect all the primary cases
-Rj <- wallinga.teunis( small.world$ROD, NA*small.world$ROD, w.gamma, NULL )
-p <- ( ggplot( data.frame( t=small.world$ROD, R=Rj ) )
-	+ geom_point( aes( x=t, y=Rj ) )
-	+ geom_line( aes( x=t, y=Rj ), width=0 )
-	+ geom_line( aes( x=t ), y=1 )
+small.world %<>% mutate( R.naive = wallinga.teunis( ROD, NA*ROD, w.gamma, NULL ) )
+p <- ( ggplot( small.world, aes( x=ROD, y=R.naive ) )
+	+ geom_point()
+	+ geom_line( width=0 )
+	+ geom_line( aes( x=ROD ), y=1 )
 	+ labs( x='Day', y='R' )
 )
 png( 'smallworld-naive.png' )
@@ -37,11 +52,11 @@ print(p)
 dev.off()
 
 ## now with the primary cases left out of infection process
-Rj <- wallinga.teunis( small.world$ROD, ifelse( small.world$Transmission == 'Disney primary case', -1, NA ), w.gamma, NULL )
-p <- ( ggplot( data.frame( t=small.world$ROD, R=Rj ) )
-	+ geom_point( aes( x=t, y=Rj ) )
-	+ geom_line( aes( x=t, y=Rj ), width=0 )
-	+ geom_line( aes( x=t ), y=1 )
+small.world %<>% mutate( R.simple = wallinga.teunis( ROD, ifelse( v == -1, -1, NA ), w.gamma, NULL ) )
+p <- ( ggplot( small.world, aes( x=ROD, y=R.simple ) )
+	+ geom_point()
+	+ geom_line( width=0 )
+	+ geom_line( aes( x=ROD ), y=1 )
 	+ labs( x='Day', y='R' )
 )
 png( 'smallworld-simple.png' )
@@ -49,23 +64,12 @@ print(p)
 dev.off()
 
 ## now with primary cases and epi links
-## sort so that i == ID, so that epi links to ID work
-ss <- ( small.world
-    %>% arrange( IID )
-    %>% mutate( v = ifelse(
-        Transmission == 'Disney primary case',
-        -1,
-        EpilinkID
-    ) )
-)
-#print( select( ss, IID, ROD, Transmission, EpilinkID, v ) )
-ss %<>% mutate( R = wallinga.teunis( ROD, v, w.gamma, NULL ) )
-print( head(ss) )
-p <- ( ggplot( ss, aes( x=ROD, y=R ) )
+small.world %<>% mutate( R.epi = wallinga.teunis( ROD, v, w.gamma, NULL ) )
+p <- ( ggplot( small.world, aes( x=ROD, y=R.epi ) )
 	+ geom_point()
 	+ geom_line( width=0 )
 	#+ geom_smooth()
-	+ geom_segment( data=avg.by.week( ss ), aes( x = week_start, xend=week_start + 6, y=R, yend=R ), color='red', width=3 )
+	+ geom_segment( data=avg.by.week( select( small.world, ROD, R=R.epi ) ), aes( x = week_start, xend=week_start + 6, y=R, yend=R ), color='red', width=3 )
 	+ geom_line( aes( x=ROD ), y=1 )
 	+ labs( x='Day', y='R' )
 )
@@ -73,7 +77,7 @@ png( 'smallworld-simple-epi.png' )
 print(p)
 dev.off()
 
-p <- ( ggplot( ss, aes( x=Age, y=R ) )
+p <- ( ggplot( small.world, aes( x=Age, y=R.epi ) )
 	+ geom_point()
 	+ scale_y_log10()
 )
@@ -83,15 +87,15 @@ dev.off()
 
 ## now try with penalty for cross-county transmission
 penalty <- function(i,j) {
-	ifelse( ss$LHJ[i] == ss$LHJ[j], 1, 0.01 )
+	ifelse( small.world$LHJ[i] == small.world$LHJ[j], 1, 0.01 )
 }
-print( select( ss, IID, ROD, Transmission, EpilinkID, v ) )
-ss %<>% mutate( R = wallinga.teunis( ROD, v, w.gamma, penalty ) )
-p <- ( ggplot( ss, aes( x=ROD, y=R ) )
+#print( select( ss, IID, ROD, Transmission, EpilinkID, v ) )
+small.world %<>% mutate( R.penalty = wallinga.teunis( ROD, v, w.gamma, penalty ) )
+p <- ( ggplot( small.world, aes( x=ROD, y=R.penalty ) )
 	+ geom_point()
 	+ geom_line( width=0 )
 	#+ geom_smooth()
-	+ geom_segment( data=avg.by.week( ss ), aes( x = week_start, xend=week_start + 6, y=R, yend=R ), color='red', width=3 )
+	+ geom_segment( data=avg.by.week( select( small.world, ROD, R=R.penalty ) ), aes( x = week_start, xend=week_start + 6, y=R, yend=R ), color='red', width=3 )
 	+ geom_line( aes( x=ROD ), y=1 )
 	+ labs( x='Day', y='R' )
 )
@@ -99,3 +103,4 @@ png( 'smallworld-simple-penalty.png' )
 print(p)
 dev.off()
 
+write.csv( small.world, 'smallworld-estimates.csv', row.names=F, quote=F )
