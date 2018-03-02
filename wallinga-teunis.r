@@ -1,5 +1,6 @@
 #!/usr/bin/R
 library(tidyverse)
+library(magrittr)
 
 ## replace ggplot's characteristic gray background with a more
 ## standard white one
@@ -119,6 +120,14 @@ png( 'smallworld-simple.png' )
 print(p)
 dev.off()
 
+avg.by.week <- function( df ) {
+    ( df
+	%>% mutate( week_start = as.integer( ROD / 7 ) * 7 )
+	%>% group_by( week_start )
+	%>% summarize( R = mean(R) )
+    )
+}
+
 ## now with primary cases and epi links
 ## sort so that i == ID, so that epi links to ID work
 ss <- ( small.world
@@ -129,13 +138,15 @@ ss <- ( small.world
         EpilinkID
     ) )
 )
-print( select( ss, IID, ROD, Transmission, EpilinkID, v ) )
-Rj <- wallinga.teunis( ss$ROD, ss$v, w.gamma, NULL )
-p <- ( ggplot( data.frame( t=ss$ROD, R=Rj ), aes( x=t, y=R ) )
+#print( select( ss, IID, ROD, Transmission, EpilinkID, v ) )
+ss %<>% mutate( R = wallinga.teunis( ROD, v, w.gamma, NULL ) )
+print( head(ss) )
+p <- ( ggplot( ss, aes( x=ROD, y=R ) )
 	+ geom_point()
 	+ geom_line( width=0 )
 	#+ geom_smooth()
-	+ geom_line( aes( x=t ), y=1 )
+	+ geom_segment( data=avg.by.week( ss ), aes( x = week_start, xend=week_start + 6, y=R, yend=R ), color='red', width=3 )
+	+ geom_line( aes( x=ROD ), y=1 )
 	+ labs( x='Day', y='R' )
 )
 png( 'smallworld-simple-epi.png' )
@@ -147,12 +158,13 @@ penalty <- function(i,j) {
 	ifelse( ss$LHJ[i] == ss$LHJ[j], 1, 0.01 )
 }
 print( select( ss, IID, ROD, Transmission, EpilinkID, v ) )
-Rj <- wallinga.teunis( ss$ROD, ss$v, w.gamma, penalty )
-p <- ( ggplot( data.frame( t=ss$ROD, R=Rj ), aes( x=t, y=R ) )
+ss %<>% mutate( R = wallinga.teunis( ROD, v, w.gamma, penalty ) )
+p <- ( ggplot( ss, aes( x=ROD, y=R ) )
 	+ geom_point()
 	+ geom_line( width=0 )
 	#+ geom_smooth()
-	+ geom_line( aes( x=t ), y=1 )
+	+ geom_segment( data=avg.by.week( ss ), aes( x = week_start, xend=week_start + 6, y=R, yend=R ), color='red', width=3 )
+	+ geom_line( aes( x=ROD ), y=1 )
 	+ labs( x='Day', y='R' )
 )
 png( 'smallworld-simple-penalty.png' )
