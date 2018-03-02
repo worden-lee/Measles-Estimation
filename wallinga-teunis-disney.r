@@ -2,6 +2,8 @@
 library(tidyverse)
 library(magrittr)
 
+source( 'wallinga-teunis-functions.r' )
+
 ## replace ggplot's characteristic gray background with a more
 ## standard white one
 theme_set(theme_bw(12)
@@ -17,80 +19,6 @@ theme_set(theme_bw(12)
            panel.grid.minor=element_blank()
    )
 )
-
-## given a w function
-w.piecewise.constant <- function( tau, theta ) {
-	return( case_when(
-		tau < 4 ~ 0,
-		tau < 8 ~ 1 / ( (22-8) + (26-4) ),
-		tau < 22 ~ 2 / ( (22-8) + (26-4) ),
-		tau < 26 ~ 1 / ( (22-8) + (26-4) ),
-		T ~ 0
-	) )
-}
-
-w.gamma <- function( tau, theta ) {
-	m = 11.1  # mean = a*s
-	sd = 2.47 # var = a*s^2
-	s = sd * sd / m
-	a = m / s
-	return ( ifelse( tau <= 0,
-		0,
-		( pgamma( tau + 0.5, shape=a, scale=s ) -
-		  pgamma( tau - 0.5, shape=a, scale=s )
-		)
-	) )
-}
-
-## and an epidemic curve
-## i.e. list of times of symptom onset t
-#t <- c( 0, 8, 11, 22, 29, 37 )
-
-## Wallinga-Teunis formula (p.511 of W and T 2004, and appendix)
-## t: list of onset dates, indexed by index "i" of individual cases
-## v: list of transmission sources, indexed by i; NA if unknown; -1 if primary case
-## w: density function for serial interval
-## returns: list of R values indexed by i
-wallinga.teunis <- function( t, v, w, penalty ) {
-	cat( 'here are ROD and epi links\n' )
-	print( t )
-	print( v )
-
-	if ( is.null( penalty ) ) {
-		penalty <- function(i,j) 1
-	}
-
-	## record all w_ij = w( ti - tj )
-	## this is likelihood for infection of i given source j
-	## if source of i is not unknown, skip
-	wij <- outer( seq_along(t), seq_along(t), FUN=function( i, j ) ifelse( is.na(v[i]), w( t[i] - t[j], c() ) * penalty(i,j), 0 ) )
-	#cat( 'w_ij\n' )
-	#print( wij )
-
-	## construct all p_ij = w_ij / sum(k) w_ik
-	## this is relative likelihood for j being source of i
-	## p is 1 where j is known, 0 if i a primary case
-	pij <- outer( seq_along(t), seq_along(t), FUN=function(i,j)
-	    sapply( seq_along(i), FUN=function(k)
-	        ifelse( is.na(v[i[k]]),
-		    ifelse( wij[i[k],j[k]] == 0,
-			0,
-			(wij[i[k],j[k]] / sum(wij[i[k],]))
-		    ),
-		    ifelse( v[i[k]] == j[k], 1, 0 )
-		)
-	    )
-	)
-	#cat( 'p_ij\n' )
-	#print( pij )
-
-	## construct R_j = sum(ti>tj) p_ij
-	## an expected number of cases caused by j
-	Rj = sapply( seq_along(t), FUN=function(j) sum( sapply( seq_along(t), FUN=function(i) pij[i,j] ) ) )
-	#cat( 'R_j\n' )
-	#print( Rj )
-	Rj
-}
 
 ## get the disney epidemic curve
 small.world <- read.csv( 'smallword_deid.csv', row.names=NULL )
@@ -120,14 +48,6 @@ png( 'smallworld-simple.png' )
 print(p)
 dev.off()
 
-avg.by.week <- function( df ) {
-    ( df
-	%>% mutate( week_start = as.integer( ROD / 7 ) * 7 )
-	%>% group_by( week_start )
-	%>% summarize( R = mean(R) )
-    )
-}
-
 ## now with primary cases and epi links
 ## sort so that i == ID, so that epi links to ID work
 ss <- ( small.world
@@ -150,6 +70,14 @@ p <- ( ggplot( ss, aes( x=ROD, y=R ) )
 	+ labs( x='Day', y='R' )
 )
 png( 'smallworld-simple-epi.png' )
+print(p)
+dev.off()
+
+p <- ( ggplot( ss, aes( x=Age, y=R ) )
+	+ geom_point()
+	+ scale_y_log10()
+)
+png( 'smallworld-by-age.png' )
 print(p)
 dev.off()
 
