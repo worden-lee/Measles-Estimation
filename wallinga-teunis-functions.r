@@ -19,9 +19,24 @@ w.piecewise.constant <- function( tau, theta ) {
 
 ## the gamma distribution used in Paul's paper
 ## this is a little quick compared to the 8-21 days we usually use
-w.gamma <- function( tau, theta ) {
+w.gamma.pg <- function( tau, theta ) {
 	m = 11.1  # mean = a*s
 	sd = 2.47 # var = a*s^2
+	s = sd * sd / m
+	a = m / s
+	return ( ifelse( tau <= 0,
+		0,
+		( pgamma( tau + 0.5, shape=a, scale=s ) -
+		  pgamma( tau - 0.5, shape=a, scale=s )
+		)
+	) )
+}
+
+## the gamma distribution used in Paul's paper
+## this is a little quick compared to the 8-21 days we usually use
+w.gamma.sfa <- function( tau, theta ) {
+	m = 14.5  # mean = a*s
+	sd = 3.25 # var = a*s^2
 	s = sd * sd / m
 	a = m / s
 	return ( ifelse( tau <= 0,

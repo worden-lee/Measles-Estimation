@@ -43,9 +43,12 @@ small.world <- ( small.world
 #print( small.world %>% filter( v == -1 ) %>% nrow )
 ## 45
 
+## which generation time function to use
+w.fn <- w.piecewise.constant
+
 ## first run it with no smarts
 ## it overdoes initial R because trying to infect all the primary cases
-small.world %<>% mutate( R.naive = wallinga.teunis( ROD, NA*ROD, w.gamma, NULL ) )
+small.world %<>% mutate( R.naive = wallinga.teunis( ROD, NA*ROD, w.fn, NULL ) )
 p <- ( ggplot( small.world, aes( x=ROD, y=R.naive ) )
 	+ geom_point()
 	+ geom_line( width=0 )
@@ -57,7 +60,7 @@ print(p)
 dev.off()
 
 ## now with the primary cases left out of infection process
-small.world %<>% mutate( R.simple = wallinga.teunis( ROD, ifelse( v == -1, -1, NA ), w.gamma, NULL ) )
+small.world %<>% mutate( R.simple = wallinga.teunis( ROD, ifelse( v == -1, -1, NA ), w.fn, NULL ) )
 p <- ( ggplot( small.world, aes( x=ROD, y=R.simple ) )
 	+ geom_point()
 	+ geom_line( width=0 )
@@ -69,7 +72,7 @@ print(p)
 dev.off()
 
 ## now with primary cases and epi links
-small.world %<>% mutate( R.epi = wallinga.teunis( ROD, v, w.gamma, NULL ) )
+small.world %<>% mutate( R.epi = wallinga.teunis( ROD, v, w.fn, NULL ) )
 p <- ( ggplot( small.world, aes( x=ROD, y=R.epi ) )
 	+ geom_point()
 	+ geom_line( width=0 )
@@ -91,11 +94,11 @@ print(p)
 dev.off()
 
 g <- ( small.world
-	%>% { estimate.generations( .$ROD, .$v, w.gamma, NULL ) }
+	%>% { estimate.generations( .$ROD, .$v, w.fn, NULL ) }
 	%>% group_by( t, generation )
 	%>% summarize( p = sum(p) )
 	%>% ungroup
-	%>% mutate( generation = factor(generation) )
+	%>% mutate( generation = fct_other(factor(generation), keep=c(0,1,2,3,4), other_level='5+') )
 )
 p <- ( ggplot( g, aes( x=t, y=p ) )
 	+ geom_col( aes( fill=generation ) )
@@ -109,7 +112,7 @@ penalty <- function(i,j) {
 	ifelse( small.world$LHJ[i] == small.world$LHJ[j], 1, 0.01 )
 }
 #print( select( ss, IID, ROD, Transmission, EpilinkID, v ) )
-small.world %<>% mutate( R.penalty = wallinga.teunis( ROD, v, w.gamma, penalty ) )
+small.world %<>% mutate( R.penalty = wallinga.teunis( ROD, v, w.fn, penalty ) )
 p <- ( ggplot( small.world, aes( x=ROD, y=R.penalty ) )
 	+ geom_point()
 	+ geom_line( width=0 )
