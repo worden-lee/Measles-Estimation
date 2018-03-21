@@ -10,3 +10,5 @@ export DEFAULT_LATEX=pdflatex
 
 %.R : %.r
 	cp -f $< $@
+
+wallinga-teunis-disney.Rout : wallinga-teunis-functions.r
