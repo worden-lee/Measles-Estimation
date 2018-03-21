@@ -47,6 +47,19 @@ w.gamma.sfa <- function( tau, theta ) {
 	) )
 }
 
+make.w.gamma <- function( m, sd ) {
+	s = sd*sd/m
+	a = m/s
+	return ( function( tau, theta ) {
+		ifelse ( tau <= 0,
+			0,
+			( pgamma( tau + 0.5, shape=a, scale=s ) -
+		  	  pgamma( tau - 0.5, shape=a, scale=s )
+			)
+		)
+	} )
+}
+
 ## w matrix used in Wallinga-Teunis
 ## t: list of onset dates
 ## v: list of transmission sources (see below)
@@ -93,9 +106,9 @@ p.matrix <- function( t, v, wij ) {
 ## penalty: multiplier for likelihood depending on other details of the two cases
 ## returns: list of R values indexed by i
 wallinga.teunis <- function( t, v, w, penalty ) {
-	cat( 'here are ROD and epi links\n' )
-	print( t )
-	print( v )
+	#cat( 'here are ROD and epi links\n' )
+	#print( t )
+	#print( v )
 
 	## record all w_ij = w( ti - tj )
 	wij <- w.matrix( t, v, w, penalty )
@@ -151,3 +164,62 @@ avg.by.week <- function( df ) {
     )
 }
 
+## unroll a matrix from n-row, n-column format
+## to 3-column, n^2-row format
+tidy.matrix <- function( p ) {
+	( data.frame( i=seq(nrow(p)) )
+	%>% group_by(i)
+	%>% do( { data.frame( j=seq(nrow(p)) ) } )
+	#%>% ungroup()
+	#%T>% print()
+	%>% group_by(i,j)
+	%>% do( {
+		#print(.)
+		data.frame( p=p[.$i[[1]],.$j[[1]]] )
+	} )
+	%>% ungroup()
+	)
+}
+
+## transmission by vaccination status
+estimate.R.by.status <- function( t, v, w, penalty, strat ) {
+	## wij = prob( j -> i )
+	wij <- w.matrix( t, v, w, penalty )
+
+	## pij = L( j -> i | i )
+	pij <- p.matrix( t, v, wij )
+
+	## now for each susceptible i we have L's adding to 1
+	## for each source j we have L's adding to R_j
+	## we classify those L's by strat[i] and strat[j]
+	p.strat <- ( tidy.matrix( pij )
+		%>% inner_join( data.frame( i=seq_along(t), t.i=t, strat.i=strat ), by='i' )
+		%>% inner_join( data.frame( j=seq_along(t), t.j=t, strat.j=strat ), by='j' )
+		%>% mutate( type=paste( strat.j, '->', strat.i ) )
+		#%T>% { print(head(.)) }
+	)
+	p.strat
+}
+
+## plot transmission graph by onset time
+plot.transmission.graph <- function( df, fn ) {
+	## stack up dots by hand
+	dots <- (df
+	%>% mutate( status=factor( ifelse( VaccineDoses > 0, 'Vacc', 'Unvacc' ) ) )
+	%>% group_by( ROD )
+	## place each dot at ROD, y
+	%>% do( { mutate(., y=seq(nrow(.))) } )
+	%>% ungroup()
+	)
+	## line from ROD, y to EpilinkID, its y
+	lines <- ( right_join( dots, dots%>%filter(!is.na(EpilinkID)), by=c(IID='EpilinkID') )
+		%T>% { print(head(.)) }
+	)
+	p <- ( ggplot()
+		+ geom_point( data=dots, aes(x=ROD,y=y, color=status), size=3 )
+		+ geom_segment( data=lines, aes(x=ROD.x,y=y.x,xend=ROD.y,yend=y.y) )
+	)
+	png(fn)
+	print(p)
+	dev.off()
+}

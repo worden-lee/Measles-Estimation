@@ -43,15 +43,18 @@ small.world <- ( small.world
 #print( small.world %>% filter( v == -1 ) %>% nrow )
 ## 45
 
+plot.transmission.graph( small.world, 'smallworld-transmission.png' )
+
 ## which generation time function to use
-w.fn <- w.piecewise.constant
+#w.fn <- w.piecewise.constant
+w.fn <- w.gamma.sfa #make.w.gamma( 9, 2.25 )
 
 ## first run it with no smarts
 ## it overdoes initial R because trying to infect all the primary cases
 small.world %<>% mutate( R.naive = wallinga.teunis( ROD, NA*ROD, w.fn, NULL ) )
 p <- ( ggplot( small.world, aes( x=ROD, y=R.naive ) )
 	+ geom_point()
-	+ geom_line( width=0 )
+	+ geom_line( size=0 )
 	+ geom_line( aes( x=ROD ), y=1 )
 	+ labs( x='Day', y='R' )
 )
@@ -63,7 +66,7 @@ dev.off()
 small.world %<>% mutate( R.simple = wallinga.teunis( ROD, ifelse( v == -1, -1, NA ), w.fn, NULL ) )
 p <- ( ggplot( small.world, aes( x=ROD, y=R.simple ) )
 	+ geom_point()
-	+ geom_line( width=0 )
+	+ geom_line( size=0 )
 	+ geom_line( aes( x=ROD ), y=1 )
 	+ labs( x='Day', y='R' )
 )
@@ -75,9 +78,9 @@ dev.off()
 small.world %<>% mutate( R.epi = wallinga.teunis( ROD, v, w.fn, NULL ) )
 p <- ( ggplot( small.world, aes( x=ROD, y=R.epi ) )
 	+ geom_point()
-	+ geom_line( width=0 )
+	+ geom_line( size=0 )
 	#+ geom_smooth()
-	+ geom_segment( data=avg.by.week( select( small.world, ROD, R=R.epi ) ), aes( x = week_start, xend=week_start + 6, y=R, yend=R ), color='red', width=3 )
+	+ geom_segment( data=avg.by.week( select( small.world, ROD, R=R.epi ) ), aes( x = week_start, xend=week_start + 6, y=R, yend=R ), color='red', size=3 )
 	+ geom_line( aes( x=ROD ), y=1 )
 	+ labs( x='Day', y='R' )
 )
@@ -93,12 +96,17 @@ png( 'smallworld-by-age.png' )
 print(p)
 dev.off()
 
-g <- ( small.world
+## estimate generation membership of each case
+gens <- ( small.world
 	%>% { estimate.generations( .$ROD, .$v, w.fn, NULL ) }
+	%>% mutate( generation = fct_other(factor(generation), keep=c(0,1,2,3,4), other_level='5+') )
+)
+
+## plot generations by time
+g <- ( gens
 	%>% group_by( t, generation )
 	%>% summarize( p = sum(p) )
 	%>% ungroup
-	%>% mutate( generation = fct_other(factor(generation), keep=c(0,1,2,3,4), other_level='5+') )
 )
 p <- ( ggplot( g, aes( x=t, y=p ) )
 	+ geom_col( aes( fill=generation ) )
@@ -106,6 +114,51 @@ p <- ( ggplot( g, aes( x=t, y=p ) )
 png( 'smallworld-generations-epi.png' )
 print(p)
 dev.off()
+
+## R by generation
+R.gen <- ( inner_join( gens, small.world, by=c(i='IID') )
+	#%T>% { print(head(.)) }
+	%>% group_by( generation )
+	%>% summarize( R = sum( R.epi * p ) / sum( p ) )
+)
+p <- ( ggplot( R.gen )
+	+ geom_col( aes( x=generation, y=R, fill=generation ) )
+	+ guides( fill='none' )
+)
+png( 'smallworld-R-by-generation-epi.png' )
+print(p)
+dev.off()
+
+## transmission per vaccine status
+small.world %<>% mutate( vaccinated = fct_explicit_na(factor(VaccineDoses > 0), na_level='-') )
+
+v <- ( estimate.R.by.status( small.world$ROD, small.world$v, w.fn, NULL, small.world$vaccinated )
+	%>% filter( type %in% c('FALSE -> FALSE','FALSE -> TRUE','TRUE -> FALSE','TRUE -> TRUE') )
+)
+
+(v
+	%>% group_by( t.j, type )
+	%>% summarize( R = sum(p) )
+	%>% ggplot()
+	#%>% add( geom_col( aes( x=t.j, y=R, fill=type ) ) )
+	%>% add( geom_line( aes( x=t.j, y=R, color=type ) ) )
+	%>% { png( 'smallworld-R-by-status.png' ); print(.); dev.off() }
+)
+
+print(head(v))
+print(head(gens))
+
+## transmission by generation and status
+( inner_join( v, gens, by=c(j='i') )
+	%>% mutate( p.ji=p.x, p.gen = p.y, vaccination=type )
+	%T>% { print(head(.)) }
+	%>% group_by( vaccination, generation )
+	%>% summarize( R=sum(p.ji*p.gen) / sum(p.gen) )
+	%T>% { print(head(.)) }
+	%>% ggplot()
+	%>% add( geom_col( aes( x=generation, y=R, fill=vaccination ), position='dodge' ) )
+	%>% { png( 'smallworld-R-by-status-by-generation.png' ); print(.); dev.off() }
+)
 
 ## now try with penalty for cross-county transmission
 penalty <- function(i,j) {
@@ -115,9 +168,9 @@ penalty <- function(i,j) {
 small.world %<>% mutate( R.penalty = wallinga.teunis( ROD, v, w.fn, penalty ) )
 p <- ( ggplot( small.world, aes( x=ROD, y=R.penalty ) )
 	+ geom_point()
-	+ geom_line( width=0 )
+	+ geom_line( size=0 )
 	#+ geom_smooth()
-	+ geom_segment( data=avg.by.week( select( small.world, ROD, R=R.penalty ) ), aes( x = week_start, xend=week_start + 6, y=R, yend=R ), color='red', width=3 )
+	+ geom_segment( data=avg.by.week( select( small.world, ROD, R=R.penalty ) ), aes( x = week_start, xend=week_start + 6, y=R, yend=R ), color='red', size=3 )
 	+ geom_line( aes( x=ROD ), y=1 )
 	+ labs( x='Day', y='R' )
 )
