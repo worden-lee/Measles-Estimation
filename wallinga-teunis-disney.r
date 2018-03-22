@@ -43,7 +43,11 @@ small.world <- ( small.world
 #print( small.world %>% filter( v == -1 ) %>% nrow )
 ## 45
 
-plot.transmission.graph( small.world, 'smallworld-transmission.png' )
+plot.transmission.graph(
+	small.world,
+	transmute( small.world, s=EpilinkID, t=IID, w=1 ),
+	'smallworld-transmission.pdf'
+)
 
 ## which generation time function to use
 #w.fn <- w.piecewise.constant
@@ -88,6 +92,17 @@ png( 'smallworld-simple-epi.png' )
 print(p)
 dev.off()
 
+## transmission graph with these imputed link likelihoods
+pij <- ( small.world
+	%>% { p.matrix( .$ROD, .$v, w.matrix( .$ROD, .$v, w.fn, NULL ) ) }
+	%>% tidy.matrix()
+)
+plot.transmission.graph( small.world,
+	mutate(pij, s=j, t=i, w=p),
+	'smallworld-transmission-epi.pdf'
+)
+
+## R.epi vs age
 p <- ( ggplot( small.world, aes( x=Age, y=R.epi ) )
 	+ geom_point()
 	+ scale_y_log10()

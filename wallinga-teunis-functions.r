@@ -39,6 +39,7 @@ w.gamma.sfa <- function( tau, theta ) {
 	sd = 3.25 # var = a*s^2
 	s = sd * sd / m
 	a = m / s
+	#if ( tau < 4 || tau > 25 ) { return(0) }
 	return ( ifelse( tau <= 0,
 		0,
 		( pgamma( tau + 0.5, shape=a, scale=s ) -
@@ -202,24 +203,57 @@ estimate.R.by.status <- function( t, v, w, penalty, strat ) {
 }
 
 ## plot transmission graph by onset time
-plot.transmission.graph <- function( df, fn ) {
+plot.transmission.graph <- function( df, links, fn ) {
 	## stack up dots by hand
 	dots <- (df
-	%>% mutate( status=factor( ifelse( VaccineDoses > 0, 'Vacc', 'Unvacc' ) ) )
-	%>% group_by( ROD )
+	%>% mutate( status=fct_explicit_na( factor( ifelse( VaccineDoses > 0, 'Vacc', 'Unvacc' ), levels=c('Unvacc','-','Vacc') ), na_level='-' ) )
 	## place each dot at ROD, y
-	%>% do( { mutate(., y=seq(nrow(.))) } )
-	%>% ungroup()
+	#%>% do( { mutate(., y=seq(nrow(.))) } )
+	%>% {
+		ds <- .;
+		## assign y to all vacc cases
+		vs <- ( ds
+			%>% filter( status == 'Vacc' )
+			%>% group_by( ROD )
+			%>% do( { mutate(., y=seq(nrow(.))) } )
+			%>% ungroup()
+		)
+		yy <- max(vs$y) + 1
+		vns <- ( ds
+			%>% filter( status == '-' )
+			%>% group_by( ROD )
+			%>% do( { mutate(., y=yy+seq(nrow(.))) } )
+			%>% ungroup()
+		)
+		yy <- max(vns$y) + 1
+		vnus <- ( ds
+			%>% filter( status == 'Unvacc' )
+			%>% group_by( ROD )
+			%>% do( { mutate(., y=yy+seq(nrow(.))) } )
+			%>% ungroup()
+		)
+		rbind( vs, vns, vnus )
+	}
 	)
 	## line from ROD, y to EpilinkID, its y
-	lines <- ( right_join( dots, dots%>%filter(!is.na(EpilinkID)), by=c(IID='EpilinkID') )
+	lines <- ( links
+		#right_join( dots, dots%>%filter(!is.na(EpilinkID)), by=c(IID='EpilinkID') )
+		%>% inner_join( dots, by=c(s='IID') )
+		%>% rename( y.s = y, ROD.s = ROD )
+		%>% inner_join( dots, by=c(t='IID') )
+		%>% rename( y.t = y, ROD.t = ROD )
 		%T>% { print(head(.)) }
 	)
 	p <- ( ggplot()
+		+ geom_segment( data=filter(lines, w!=1), aes(x=ROD.s,y=y.s,xend=ROD.t,yend=y.t,alpha=0.001*w), color='green' )
 		+ geom_point( data=dots, aes(x=ROD,y=y, color=status), size=3 )
-		+ geom_segment( data=lines, aes(x=ROD.x,y=y.x,xend=ROD.y,yend=y.y) )
+		+ geom_segment( data=filter(lines, w==1), aes(x=ROD.s,y=y.s,xend=ROD.t,yend=y.t), color='black' )
+		+ guides( alpha='none' )
+		+ labs( x='Onset Date', y='' )
+		+ theme( axis.ticks.y=element_blank(), axis.text.y=element_blank() )
 	)
-	png(fn)
+	pdf(fn)
+	#png(fn)
 	print(p)
 	dev.off()
 }
